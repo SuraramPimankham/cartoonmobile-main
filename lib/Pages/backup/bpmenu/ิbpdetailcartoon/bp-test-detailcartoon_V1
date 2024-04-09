@@ -1,0 +1,583 @@
+void _sendAndSaveToSelectedUser(String friendId, String episodeId) async {
+  try {
+    // ตรวจสอบว่า friendId มีอยู่ในรายชื่อเพื่อนหรือไม่
+    if (showfriend.contains(friendId)) {
+      // ดึงข้อมูลอีเมลของเพื่อนที่เลือก
+      DocumentSnapshot friendSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(friendId)
+          .get();
+
+      if (friendSnapshot.exists) {
+        String friendEmail = friendSnapshot.get('email');
+        // ค้นหาผู้ใช้ที่มีอีเมลเหมือนกับเพื่อนที่เลือก
+        QuerySnapshot userQuery = await FirebaseFirestore.instance
+            .collection('users')
+            .where('email', isEqualTo: friendEmail)
+            .get();
+
+        if (userQuery.docs.isNotEmpty) {
+          // รับ user ID ของผู้ใช้ที่พบ
+          String userId = userQuery.docs.first.id;
+          // ดึงตอนการ์ตูนที่ซื้อของผู้ใช้ปัจจุบัน
+          Map<String, dynamic> data = {
+            'storys': episodeId,
+            'docIds': docIds,
+          };
+          // อัปเดตฟิลด์ purchasedEpisodes ของผู้ใช้ที่พบโดยเพิ่มข้อมูลของตอนการ์ตูนที่เพิ่งซื้อลงไป
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(userId)
+              .update({
+            'purchasedEpisodes': FieldValue.arrayUnion([data]),
+          });
+
+          print('ตอนการ์ตูนถูกส่งและบันทึกลงในฐานข้อมูลของผู้ใช้เรียบร้อยแล้ว');
+        } else {
+          print('ไม่พบผู้ใช้ที่มีอีเมลเหมือนกับเพื่อนที่เลือก');
+        }
+      } else {
+        print('ไม่พบข้อมูลเกี่ยวกับเพื่อน');
+      }
+    } else {
+      print('ไม่พบเพื่อนที่เลือก');
+    }
+  } catch (e) {
+    print('เกิดข้อผิดพลาดในการส่งและบันทึกข้อมูล: $e');
+  }
+}
+
+
+
+
+
+
+
+ Future<void> _ShareEp(
+      String userId, String recipientUid, String episodeId) async {
+    try {
+      _user = FirebaseAuth.instance.currentUser;
+
+      if (_user != null) {
+        // ดึงข้อมูลทั้งหมดใน purchasedEpisodes ของผู้ใช้
+        DocumentSnapshot userSnapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(_user!.uid)
+            .get();
+
+        if (userSnapshot.exists) {
+          Map<String, dynamic> userData =
+              userSnapshot.data() as Map<String, dynamic>;
+          Map<String, dynamic> purchasedEpisodes =
+              userData['purchasedEpisodes'] ?? {};
+
+          // สร้างรายการของข้อมูลที่ต้องการแชร์
+          List<Map<String, dynamic>> sharingData = [];
+          purchasedEpisodes.forEach((key, value) {
+            // ถ้าตอนนี้ไม่เท่ากับตอนที่ผู้ใช้ต้องการแชร์
+            if (key != episodeId) {
+              sharingData.add({
+                'episodeId': key,
+                'sender': _user!.email,
+                'timestamp': DateTime.now(),
+              });
+            }
+          });
+
+          // เพิ่มข้อมูลลงในคอลเลกชัน "share" ใน Firestore
+          await FirebaseFirestore.instance
+              .collection('share')
+              .doc(recipientUid)
+              .set({'sharingData': sharingData});
+
+          print('บันทึกข้อมูลการแชร์เรียบร้อยแล้ว');
+        } else {
+          print('ไม่พบข้อมูลผู้ใช้.');
+        }
+      } else {
+        print('ผู้ใช้ยังไม่ได้เข้าสู่ระบบ.');
+      }
+    } catch (e) {
+      print('เกิดข้อผิดพลาดในการบันทึกข้อมูลการแชร์: $e');
+      // จัดการข้อผิดพลาดตามความเหมาะสม
+    }
+  }
+
+
+
+
+  Future<void> _ShareEp(String episodeId, String recioient) async {
+    try {
+      // สร้าง map
+      Map<String, dynamic> sending = {
+        'sender': _user!.email,
+        'recipients': recioient
+      };
+
+      await FirebaseFirestore.instance
+          .collection('Share')
+          .doc(episodeId)
+          .set({'sending': sending});
+    } catch (e) {
+      // จัดการข้อผิดพลาดตามความเหมาะสม
+    }
+  }
+
+
+  
+void shareWithFriend(String friendName) async {
+    print('Sharing with friend: $friendName');
+    try {
+      _user = FirebaseAuth.instance.currentUser;
+
+      if (_user != null) {
+        DocumentSnapshot userSnapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(_user!.uid)
+            .get();
+
+        if (userSnapshot.exists) {
+          // อ่านข้อมูลผู้ใช้จาก snapshot
+          Map<String, dynamic> userData =
+              userSnapshot.data() as Map<String, dynamic>;
+
+          // ดึง storysId และ episodes จาก purchasedEpisodes ที่ผู้ใช้เลือก
+          Map<String, dynamic> storysId = {};
+          Map<String, dynamic>? purchasedEpisodes =
+              userData['purchasedEpisodes']?[widget.episodeData['id']];
+          if (purchasedEpisodes != null) {
+            storysId =
+                purchasedEpisodes['storysId']?.cast<String, dynamic>() ?? {};
+          }
+
+          List<dynamic> episodes = [];
+          if (purchasedEpisodes != null) {
+            episodes = purchasedEpisodes['episodes']?.values.toList() ?? [];
+          }
+
+          // สร้าง Map ใหม่เพื่อเก็บข้อมูลการแชร์
+          Map<String, dynamic> shareData = {
+            'storysId': storysId,
+            'episodes': episodes,
+          };
+
+          // อ่านข้อมูลการแชร์ของผู้ใช้
+          Map<String, dynamic> sharedWith = userData['sharedWith'] ??
+              {}; // ดึงข้อมูลของฟิลด์ 'sharedWith' หากมีอยู่
+
+          // เพิ่มหรืออัพเดตข้อมูลการแชร์ของเพื่อนในฟิลด์ 'sharedWith'
+          sharedWith[friendName] = shareData;
+
+          // อัพเดตข้อมูลการแชร์ในฐานข้อมูล Firestore
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(_user!.uid)
+              .update({'sharedWith': sharedWith});
+
+          // แสดงข้อความยืนยันการแชร์
+          print('การแชร์สำเร็จแล้ว');
+        } else {
+          print('ไม่พบข้อมูลผู้ใช้.');
+        }
+      } else {
+        print('ผู้ใช้ยังไม่ได้เข้าสู่ระบบ.');
+      }
+    } catch (e) {
+      print('เกิดข้อผิดพลาดในการแชร์: $e');
+    }
+  }
+
+
+
+;  มี  stroyid
+  void shareWithFriend(String friendName) async {
+    print('Sharing with friend: $friendName');
+    try {
+      _user = FirebaseAuth.instance.currentUser;
+
+      if (_user != null) {
+        DocumentSnapshot userSnapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(_user!.uid)
+            .get();
+
+        if (userSnapshot.exists) {
+          // อ่านข้อมูลผู้ใช้จาก snapshot
+          Map<String, dynamic> userData =
+              userSnapshot.data() as Map<String, dynamic>;
+
+          // ดึง purchasedEpisodes จากผู้ใช้
+          Map<String, dynamic>? purchasedEpisodes =
+              userData['purchasedEpisodes']?[widget.episodeData['id']];
+
+          // สร้าง List ของ storyId โดยตรวจสอบว่ามี purchasedEpisodes หรือไม่
+          List<String> storyId = [];
+          if (purchasedEpisodes != null) {
+            storyId = [widget.episodeData['id']];
+          }
+
+          // สร้างข้อมูลการแชร์
+          Map<String, dynamic> shareData = {
+            'storyId': storyId,
+          };
+
+      
+
+          // อ่านข้อมูลการแชร์ของผู้ใช้
+          Map<String, dynamic> sharedWith = userData['sharedWith'] ?? {};
+
+          // เพิ่มหรืออัพเดตข้อมูลการแชร์ของเพื่อนในฟิลด์ 'sharedWith'
+          sharedWith[friendName] = shareData;
+
+          // อัพเดตข้อมูลการแชร์ใน Firestore
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(_user!.uid)
+              .update({'sharedWith': sharedWith});
+
+          // แสดงข้อความยืนยันการแชร์
+          print('การแชร์สำเร็จแล้ว');
+        } else {
+          print('ไม่พบข้อมูลผู้ใช้.');
+        }
+      } else {
+        print('ผู้ใช้ยังไม่ได้เข้าสู่ระบบ.');
+      }
+    } catch (e) {
+      print('เกิดข้อผิดพลาดในการแชร์: $e');
+    }
+  }
+
+
+  
+ void shareWithFriend(String friendName, String select) async {
+    print('Sharing with friend: $friendName');
+    try {
+      _user = FirebaseAuth.instance.currentUser;
+
+      if (_user != null) {
+        DocumentSnapshot userSnapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(_user!.uid)
+            .get();
+
+        if (userSnapshot.exists) {
+          // อ่านข้อมูลผู้ใช้จาก snapshot
+          Map<String, dynamic> userData =
+              userSnapshot.data() as Map<String, dynamic>;
+
+          // ดึง purchasedEpisodes จากผู้ใช้
+          Map<String, dynamic>? purchasedEpisodes =
+              userData['purchasedEpisodes']?[widget.episodeData['id']];
+
+          // ตรวจสอบว่ามี episodes ที่ผู้ใช้เลือกหรือไม่
+          dynamic selectedEpisode =
+              purchasedEpisodes?['episodes']?[widget.episodeData['id']];
+
+          // ตรวจสอบว่ามีการเลือก episodes หรือไม่ และล็อกข้อมูลที่ผู้ใช้เลือก
+          if (selectedEpisode != null) {
+            print('User selected episode: $selectedEpisode');
+          } else {
+            print('User did not select any episode.');
+          }
+
+          // สร้าง List ของ episodes จาก purchasedEpisodes
+          List<dynamic> episodes =
+              purchasedEpisodes?['episodes']?.values.toList() ?? [];
+
+          // สร้างข้อมูลการแชร์
+          Map<String, dynamic> shareData = {
+            // ใช้ widget.episodeData['id'] เป็น key ใน map
+            widget.episodeData['id']: {
+              'episodes': episodes,
+            },
+          };
+
+          // อ่านข้อมูลการแชร์ของผู้ใช้
+          Map<String, dynamic> sharedWith = userData['sharedWith'] ?? {};
+
+          // เพิ่มหรืออัพเดตข้อมูลการแชร์ของเพื่อนในฟิลด์ 'sharedWith'
+          sharedWith[friendName] = shareData;
+
+          // อัพเดตข้อมูลการแชร์ใน Firestore
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(_user!.uid)
+              .update({'sharedWith': sharedWith});
+
+          // แสดงข้อความยืนยันการแชร์
+          print('การแชร์สำเร็จแล้ว');
+        } else {
+          print('ไม่พบข้อมูลผู้ใช้.');
+        }
+      } else {
+        print('ผู้ใช้ยังไม่ได้เข้าสู่ระบบ.');
+      }
+    } catch (e) {
+      print('เกิดข้อผิดพลาดในการแชร์: $e');
+    }
+  }
+
+
+
+   void _shareWithFriend(String friendName, String storyId) async {
+    print('Sharing with friend: $friendName');
+    try {
+      // เรียกใช้งาน firebase
+      _user = FirebaseAuth.instance.currentUser;
+
+      if (_user != null) {
+        // ดึงข้อมูลของผู้ใช้ที่เข้าสู่ระบบ
+        DocumentSnapshot userSnapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(_user!.uid)
+            .get();
+
+        // สอบว่ามีข้อมูลของผู้ใช้ในเอกสารที่ได้รับมาหรือไม่
+        if (userSnapshot.exists) {
+          Map<String, dynamic> userData =
+              userSnapshot.data() as Map<String, dynamic>;
+
+          // อ่านข้อมูลการแชร์ของผู้ใช้
+          Map<String, dynamic> sharedWith = userData['share'] ?? {};
+
+            
+          // สร้างตัวแปร shareData เป็น Map
+          Map<String, dynamic> shareData = {
+            widget.episodeData['id']:{}
+          };
+
+          // update Friend  ลงใน share
+          sharedWith[friendName] = shareData;
+
+          // อัปเดตข้อมูลการแชร์ใน Firestore
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(_user!.uid)
+              .update({'share': sharedWith});
+        }
+      }
+    } catch (e) {
+      print('เกิดข้อผิดพลาดในการแชร์: $e');
+    }
+  }
+
+
+   void _shareWithFriend(String friendName, String storyId) async {
+    print('Sharing with friend: $friendName');
+    try {
+      // เรียกใช้งาน firebase
+      _user = FirebaseAuth.instance.currentUser;
+
+      if (_user != null) {
+        // ดึงข้อมูลของผู้ใช้ที่เข้าสู่ระบบ
+        DocumentSnapshot userSnapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(_user!.uid)
+            .get();
+
+        // สอบว่ามีข้อมูลของผู้ใช้ในเอกสารที่ได้รับมาหรือไม่
+        if (userSnapshot.exists) {
+          Map<String, dynamic> userData =
+              userSnapshot.data() as Map<String, dynamic>;
+
+          // อ่านข้อมูลการแชร์ของผู้ใช้
+          Map<String, dynamic> sharedWith = userData['share'] ?? {};
+
+          // สร้างตัวแปร shareData เป็น Map
+          // Map<String, dynamic> shareData = {widget.episodeData['id']: {}};
+
+         Map<String, dynamic> shareData = {
+            widget.episodeData['id'].toString(): {
+                'episode': widget.episodeData['id'],
+              'timestamp': Timestamp.now(),
+            },
+          };
+
+          // update Friend  ลงใน share
+          sharedWith[friendName] = shareData;
+
+          // อัปเดตข้อมูลการแชร์ใน Firestore
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(_user!.uid)
+              .update({'share': sharedWith});
+        }
+      }
+    } catch (e) {
+      print('เกิดข้อผิดพลาดในการแชร์: $e');
+    }
+  }
+
+
+
+void _shareWithFriend(String friendName, String episodeId) async {
+    print('Sharing with friend: $friendName');
+    try {
+      // เรียกใช้งาน firebase
+      _user = FirebaseAuth.instance.currentUser;
+
+      if (_user != null) {
+        // ดึงข้อมูลของผู้ใช้ที่เข้าสู่ระบบ
+        DocumentSnapshot userSnapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(_user!.uid)
+            .get();
+
+        // สอบว่ามีข้อมูลของผู้ใช้ในเอกสารที่ได้รับมาหรือไม่
+        if (userSnapshot.exists) {
+          Map<String, dynamic> userData =
+              userSnapshot.data() as Map<String, dynamic>;
+
+          // อ่านข้อมูลการแชร์ของผู้ใช้
+          Map<String, dynamic> sharedWith = userData['share'] ?? {};
+
+          // สร้างตัวแปร shareData เป็น Map
+          Map<String, dynamic> shareData = {
+            widget.episodeData['id'].toString(): {
+              'episode': {
+                episodeId
+              },
+              'timestamp': Timestamp.now(),
+            },
+          };
+          // update Friend ลงใน share
+          if (sharedWith.containsKey(friendName)) {
+            sharedWith[friendName]!.addAll(shareData);
+          } else {
+            sharedWith[friendName] = shareData;
+          }
+
+          // อัปเดตข้อมูลการแชร์ใน Firestore
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(_user!.uid)
+              .update({'share': sharedWith});
+        }
+      }
+    } catch (e) {
+      print('เกิดข้อผิดพลาดในการแชร์: $e');
+    }
+  }
+
+
+
+
+  
+  void _saveSharedEpisode(String friendEmail, String episodeId, DateTime sendTime) async {
+    try {
+      QuerySnapshot querySnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .where('email', isEqualTo: friendEmail)
+          .get();
+
+      if (querySnapshot.docs.isNotEmpty) {
+        String friendUid = querySnapshot.docs.first.id;
+
+        DocumentSnapshot friendSnapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(friendUid)
+            .get();
+
+        if (friendSnapshot.exists) {
+          Map<String, dynamic>? friendData =
+              friendSnapshot.data() as Map<String, dynamic>?;
+
+          if (friendData != null &&
+              friendData.containsKey('purchasedEpisodes')) {
+            Map<String, dynamic>? purchasedEpisodesData =
+                friendData['purchasedEpisodes'] as Map<String, dynamic>?;
+
+            if (purchasedEpisodesData != null) {
+              // บันทึก ID และตอนที่ซื้อไปยังฟิลด์ purchasedEpisodes ของเพื่อน
+              if (purchasedEpisodesData.containsKey(widget.episodeData['id'])) {
+                // ตรวจสอบว่ามีข้อมูลการซื้อของการ์ตูนนี้อยู่แล้วหรือไม่
+                Map<String, dynamic> friendPurchasedEpisodes =
+                    purchasedEpisodesData[widget.episodeData['id']]
+                        as Map<String, dynamic>;
+
+                // ตรวจสอบว่ามี ID และตอนที่ซื้ออยู่แล้วหรือไม่
+                if (!friendPurchasedEpisodes.containsKey(episodeId)) {
+                  // ถ้าไม่มีให้เพิ่ม ID และตอนที่ซื้อลงในฟิลด์ purchasedEpisodes ของเพื่อน
+                  friendPurchasedEpisodes['episodes'][episodeId] = {
+                    'episode' : episodeId,
+                    'sendTime': sendTime,
+                  };
+                  // อัพเดทตอนที่ซื้อของเพื่อนในฐานข้อมูล
+                  await FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(friendUid)
+                      .update({'purchasedEpisodes': purchasedEpisodesData});
+                } else {
+                  // ถ้ามีอยู่แล้วให้ไม่ต้องทำอะไร
+                  print('Friend already has purchased episode: $episodeId');
+                }
+              } else {
+                // ถ้ายังไม่มีข้อมูลการซื้อของการ์ตูนนี้ ให้สร้างฟิลด์ purchasedEpisodes ใหม่
+                Map<String, dynamic> friendPurchasedEpisodes = {
+                  episodeId:{
+                   'episode': episodeId,
+                    'sendTime': sendTime, 
+                  }
+                };
+
+                purchasedEpisodesData[widget.episodeData['id']] = {
+                  'episodes': friendPurchasedEpisodes 
+                };
+
+                // อัพเดทตอนที่ซื้อของเพื่อนในฐานข้อมูล
+                await FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(friendUid)
+                    .update({'purchasedEpisodes': purchasedEpisodesData});
+              }
+            } else {
+              // ถ้ายังไม่มีฟิลด์ purchasedEpisodes ในข้อมูลของเพื่อน ให้สร้างใหม่
+              Map<String, dynamic> friendPurchasedEpisodes = {
+                 episodeId: {
+                  'episode': episodeId,
+                  'sendTime': sendTime,
+                },
+              };
+              // อัพเดทตอนที่ซื้อของเพื่อนในฐานข้อมูล
+              await FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(friendUid)
+                  .update({
+                'purchasedEpisodes': {
+                  widget.episodeData['id']: {
+                    'episodes': {
+                      episodeId :friendPurchasedEpisodes,
+                      }
+                  }
+                }
+              });
+            }
+          } else {
+            // ถ้ายังไม่มีข้อมูลการซื้อของเพื่อนเลย ให้สร้างฟิลด์ purchasedEpisodes ใหม่
+            Map<String, dynamic> friendPurchasedEpisodes = {
+               episodeId: {
+                'episode': episodeId,
+                'sendTime': sendTime,
+              },
+            };
+            // อัพเดทตอนที่ซื้อของเพื่อนในฐานข้อมูล
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc(friendUid)
+                .update({
+              'purchasedEpisodes': {
+                widget.episodeData['id']: {'episodes': friendPurchasedEpisodes}
+              }
+            });
+          }
+        } else {
+          print('User with UID $friendUid not found.');
+        }
+      } else {
+        print('User with email $friendEmail not found.');
+      }
+    } catch (e) {
+      print('Error saving shared episode: $e');
+    }
+  }

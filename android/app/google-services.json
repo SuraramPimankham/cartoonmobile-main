@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "353158526527",
+    "firebase_url": "https://cartoon-f49d5-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "cartoon-f49d5",
+    "storage_bucket": "cartoon-f49d5.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:353158526527:android:d4d4948f5e669a67e7ea8a",
+        "android_client_info": {
+          "package_name": "com.example.cartoonmobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDiwhT4zPX8Za2Mu6UkK9cH6OuIr4kk-H8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
